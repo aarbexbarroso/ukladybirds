@@ -10,66 +10,66 @@ library(rnaturalearthdata)
 
 RUN <- 5
 
-# Ler ocorrências de um arquivo .csv
-occs <- read.csv(paste0('./DATA_Maxent/Batch_',RUN,'/trainval.csv'))
+# Read occurrences from a CSV file
+occurrences <- read.csv(paste0('./DATA_Maxent/Batch_',RUN,'/trainval.csv'))
 
-# Criar sf (Simple Features) das ocorrências, agrupando as colunas de coordenadas
-occs_sf <- st_as_sf(occs, coords = c("lon", "lat"), crs = 4326)
+# Create sf (Simple Features) from occurrences, using coordinate columns
+occurrences_sf <- st_as_sf(occurrences, coords = c("lon", "lat"), crs = 4326)
 
-# Baixar variáveis bioclimáticas (19 camadas ambientais do WorldClim)
+# Download bioclimatic variables (19 WorldClim layers)
 bio_vars <- geodata::worldclim_global(var = "bio", res = 2.5, path = '/path')
 bio_stack <- raster::stack(bio_vars)
 
-# Baixar limite político do Reino Unido
+# Download political boundary of the United Kingdom
 uk <- ne_countries(scale = "medium", country = "United Kingdom", returnclass = "sf")
 
-# Transformar variáveis ambientais para formato terra
+# Convert environmental variables to terra format
 bio_terra <- terra::rast(bio_stack)
 
-# Reprojetar o limite do Reino Unido para o CRS das variáveis (WGS84)
+# Reproject UK boundary to the CRS of the variables (WGS84)
 uk_proj <- st_transform(uk, crs = crs(bio_terra))
 
-# Recortar (crop + mask) as variáveis para o Reino Unido
+# Crop and mask variables to the United Kingdom
 bio_crop <- terra::crop(bio_terra, vect(uk_proj))
 bio_mask <- terra::mask(bio_crop, vect(uk_proj))
 
-# Definir CRS UTM baseado nas ocorrências
-mean_lon <- mean(occs$lon)
+# Define UTM CRS based on occurrence longitudes
+mean_lon <- mean(occurrences$lon)
 utm_zone <- floor((mean_lon + 180) / 6) + 1
 utm_crs <- paste0("+proj=utm +zone=", utm_zone, " +datum=WGS84 +units=m +no_defs")
 
-# Projetar ocorrências e variáveis para UTM
-occs_utm <- st_transform(occs_sf, crs = utm_crs)
+# Project occurrences and variables to UTM
+occurrences_utm <- st_transform(occurrences_sf, crs = utm_crs)
 bio_utm <- terra::project(bio_mask, utm_crs)
 
-# Converter SpatRaster para RasterStack
+# Convert SpatRaster to RasterStack
 bio_utm_raster <- raster::stack()
 for (i in 1:terra::nlyr(bio_utm)) {
   bio_utm_raster <- raster::addLayer(bio_utm_raster, raster::raster(bio_utm[[i]]))
 }
 
-# Preparar pasta base
+# Prepare base output directory
 output_base_dir <- paste0('modelos_maxent_teste/Batch_',RUN,'/')
 dir.create(output_base_dir, showWarnings = FALSE)
 
-# Lista de espécies
-species_list <- unique(occs$species)
+# Species list
+species_list <- unique(occurrences$species)
 
 
-# Loop para cada espécie
-for (sp in species_list) {
-  message("Rodando para espécie: ", sp)
+# Loop per species to set up SDM data
+for (species_name in species_list) {
+  message("Running for species: ", species_name)
   
-  sp_occurs <- occs_utm %>% 
-    filter(species == sp) %>% 
+  species_occurs <- occurrences_utm %>% 
+    filter(species == species_name) %>% 
     st_coordinates() %>% 
     as.data.frame()
-  sp_occurs$species <- sp
-  colnames(sp_occurs) <- c("lon", "lat", "species")
+  species_occurs$species <- species_name
+  colnames(species_occurs) <- c("lon", "lat", "species")
   
-  sdmdata_1sp <- setup_sdmdata(
-    species_name = sp,
-    occurrences = sp_occurs,
+  sdmdata_1species <- setup_sdmdata(
+    species_name = species_name,
+    occurrences = species_occurs,
     predictors = bio_utm_raster,
     models_dir = output_base_dir,
     partition_type = "crossvalidation",
@@ -81,22 +81,22 @@ for (sp in species_list) {
     clean_uni = TRUE,
     clean_nas = TRUE
   )
-  message("Finalizado: ", sp)
+  message("Finished: ", species_name)
 }
 
 
-for (sp in species_list) {
-  message("Rodando para espécie: ", sp)
+for (species_name in species_list) {
+  message("Running for species: ", species_name)
   
-  sp_occurs <- occs_utm %>% 
-    filter(species == sp) %>% 
+  species_occurs <- occurrences_utm %>% 
+    filter(species == species_name) %>% 
     st_coordinates() %>% 
     as.data.frame()
-  sp_occurs$species <- sp
-  colnames(sp_occurs) <- c("lon", "lat", "species")
+  species_occurs$species <- species_name
+  colnames(species_occurs) <- c("lon", "lat", "species")
   
-  sp_maxnet <- do_many(
-    species_name = sp,
+  species_many <- do_many(
+    species_name = species_name,
     models_dir = output_base_dir,
     predictors = bio_utm_raster,
     maxent = TRUE,
@@ -107,23 +107,23 @@ for (sp in species_list) {
     mask = NULL,
     equalize = TRUE
   )
-  message("Finalizado: ", sp)
+  message("Finished: ", species_name)
 }
 
 
-for (sp in species_list) {
-  message("Rodando para espécie: ", sp)
+for (species_name in species_list) {
+  message("Running for species: ", species_name)
   
-  sp_occurs <- occs_utm %>% 
-    filter(species == sp) %>% 
+  species_occurs <- occurrences_utm %>% 
+    filter(species == species_name) %>% 
     st_coordinates() %>% 
     as.data.frame()
-  sp_occurs$species <- sp
-  colnames(sp_occurs) <- c("lon", "lat", "species")
+  species_occurs$species <- species_name
+  colnames(species_occurs) <- c("lon", "lat", "species")
   
-  # Gerar modelo final (agregação das partições)
+  # Generate final model (aggregate partitions)
   final_model(
-    species_name = sp,
+    species_name = species_name,
     models_dir = output_base_dir,
     algorithms = c("maxent"),
     which_models = c("raw_mean"),
@@ -132,22 +132,22 @@ for (sp in species_list) {
     overwrite = TRUE,
     write_rds = TRUE
   )
-  message("Finalizado: ", sp)
+  message("Finished: ", species_name)
 }
 
 
-for (sp in species_list) {
-  message("Rodando para espécie: ", sp)
+for (species_name in species_list) {
+  message("Running for species: ", species_name)
   
-  sp_occurs <- occs_utm %>% 
-    filter(species == sp) %>% 
+  species_occurs <- occurrences_utm %>% 
+    filter(species == species_name) %>% 
     st_coordinates() %>% 
     as.data.frame()
-  sp_occurs$species <- sp
-  colnames(sp_occurs) <- c("lon", "lat", "species")
+  species_occurs$species <- species_name
+  colnames(species_occurs) <- c("lon", "lat", "species")
   
-  ens <- ensemble_model(species_name = sp,
-                      occurrences = occs,
+  ens <- ensemble_model(species_name = species_name,
+                      occurrences = occurrences,
                       performance_metric = "pROC",
                       which_ensemble = c("average",
                                          "best",
@@ -161,9 +161,9 @@ for (sp in species_list) {
                       models_dir = output_base_dir,
                       overwrite = TRUE
   )                    
-  message("Finalizado: ", sp)
+  message("Finished: ", species_name)
 }
-message("Todos os modelos finalizados com ensemble.")
+message("All models finished with ensemble.")
 
 
 ########################################### TEST PREDICTIONS #################################################
@@ -174,71 +174,71 @@ library(sf)
 library(dplyr)
 library(stringr)
 
-# Caminho principal dos modelos
-modelos_dir <- paste0('modelos_maxent_teste/Batch_',RUN,'/')
+# Main models directory
+models_dir <- paste0('modelos_maxent_teste/Batch_',RUN,'/')
 
-# CSV com coordenadas de teste
+# CSV with test coordinates
 test_csv <- paste0('./DATA_Maxent/Batch_',RUN,'/test.csv')
 test_df <- read.csv(test_csv)
 
-# Converter para sf em WGS84
+# Convert to sf in WGS84
 test_sf <- st_as_sf(test_df, coords = c("lon", "lat"), crs = 4326)
 
-# Lista de espécies (pastas)
-species_dirs <- list.dirs(modelos_dir, recursive = FALSE)
+# List of species directories
+species_dirs <- list.dirs(models_dir, recursive = FALSE)
 
-# Criar data.frame com coordenadas originais
+# Create data.frame with original coordinates
 result_all <- test_df
 
-# Loop por espécie
+# Loop per species directory
 for (species_path in species_dirs) {
-  # Nome da espécie
+  # species name
   species_name <- basename(species_path)
   
-  # Caminho do .tif
+  # path to .tif
   tif_file <- file.path(species_path, "present", "final_models", 
                         paste0(species_name, "_maxent_raw_mean.tif"))
   
   if (file.exists(tif_file)) {
-    cat("Processando:", species_name, "\n")
+    cat("Processing:", species_name, "\n")
     
-    # Carrega raster
+    # load raster
     model_rast <- rast(tif_file)
     
-    # Reprojetar os pontos para o CRS do raster
+    # Reproject points to raster CRS
     test_proj <- st_transform(test_sf, crs = crs(model_rast))
     test_vect <- terra::vect(test_proj)
     
-    # Extrair valores
+    # Extract values
     predicted_values <- terra::extract(model_rast, test_vect)
     predicted_values <- predicted_values[, -1, drop = FALSE]  # Remove ID
     
-    # Renomear coluna com nome da espécie
+    # Rename column with species name
     colnames(predicted_values) <- species_name
     
-    # Adicionar ao resultado geral
+    # Add to overall result
     result_all[[species_name]] <- predicted_values[[1]]
     
   } else {
-    cat("AVISO: Modelo não encontrado para:", species_name, "\n")
+    cat("WARNING: Model not found for:", species_name, "\n")
   }
 }
 
-# Salvar resultado final
-write.csv(result_all, paste0(modelos_dir,'predicoes_todas_as_especies.csv'), row.names = FALSE)
+# Save final result
+write.csv(result_all, paste0(models_dir,'predictions_all_species.csv'), row.names = FALSE)
 
-# Últimas 18 colunas: colunas de probabilidade por classe
+# Last 18 columns: probability columns per class
 prob_cols <- tail(colnames(result_all), 18)
-class_names <- prob_cols  # nomes das espécies
+class_names <- prob_cols  # species names
 
-# Função para calcular top-k
+# Function to compute top-k flag
 get_topk_flag <- function(probs_row, true_label, k) {
   probs_named <- setNames(as.numeric(probs_row), class_names)
   top_k <- names(sort(probs_named, decreasing = TRUE))[1:min(k, length(probs_named))]
   return(as.integer(true_label %in% top_k))
 }
 
-# Calcula top-1, 3, 5, 10
+# Compute top-1, 3, 5, 10
 for (k in c(1, 3, 5, 10)) {
   result_all[[paste0("top_", k, "_accuracy")]] <- mapply(
     FUN = function(true_label, probs_row) {
@@ -250,36 +250,35 @@ for (k in c(1, 3, 5, 10)) {
 }
 
 
-write.csv(result_all, paste0(modelos_dir,'predicoes_todas_as_especies_com_acuracia.csv'), row.names = FALSE)
+write.csv(result_all, paste0(models_dir,'predictions_all_species_with_accuracy.csv'), row.names = FALSE)
 
 
-# Vetor com os nomes das colunas de acurácia
+# Vector with accuracy column names
 accuracy_cols <- c("top_1_accuracy", "top_3_accuracy", "top_5_accuracy", "top_10_accuracy")
 
-cat("Acurácias gerais médias:\n")
+cat("Average overall accuracies:\n")
 
 for (col in accuracy_cols) {
   if (col %in% colnames(result_all)) {
     mean_acc <- mean(result_all[[col]], na.rm = TRUE)
     cat(sprintf("%s: %.2f%%\n", col, mean_acc * 100))
   } else {
-    cat(sprintf("Coluna %s não encontrada no data.frame.\n", col))
+    cat(sprintf("Column %s not found in the data.frame.\n", col))
   }
 }
 
 
 for (col in accuracy_cols) {
   if (col %in% colnames(result_all)) {
-    cat(sprintf("\n%s por classe:\n", col))
+    cat(sprintf("\n%s by class:\n", col))
     result_all %>%
       group_by(species) %>%
-      summarise(media = mean(.data[[col]], na.rm = TRUE)) %>%
-      arrange(desc(media)) %>%
-      mutate(media = sprintf("%.2f%%", media * 100)) %>%
+      summarise(mean_acc = mean(.data[[col]], na.rm = TRUE)) %>%
+      arrange(desc(mean_acc)) %>%
+      mutate(mean_acc = sprintf("%.2f%%", mean_acc * 100)) %>%
       print(n = Inf)
   }
 }
-
 
 
 ########################################### VALIDATION PREDICTIONS #################################################
@@ -291,71 +290,71 @@ library(stringr)
 
 RUN <-5
 
-# Caminho principal dos modelos
-modelos_dir <- paste0('modelos_maxent_teste/Batch_',RUN,'/')
+# Main models directory
+models_dir <- paste0('modelos_maxent_teste/Batch_',RUN,'/')
 
-# CSV com coordenadas de teste
+# CSV with validation coordinates
 test_csv <- paste0('./DATA_Maxent/Batch_',RUN,'/validation.csv')
 test_df <- read.csv(test_csv)
 
-# Converter para sf em WGS84
+# Convert to sf in WGS84
 test_sf <- st_as_sf(test_df, coords = c("lon", "lat"), crs = 4326)
 
-# Lista de espécies (pastas)
-species_dirs <- list.dirs(modelos_dir, recursive = FALSE)
+# List of species directories
+species_dirs <- list.dirs(models_dir, recursive = FALSE)
 
-# Criar data.frame com coordenadas originais
+# Create data.frame with original coordinates
 result_all <- test_df
 
-# Loop por espécie
+# Loop per species directory
 for (species_path in species_dirs) {
-  # Nome da espécie
+  # species name
   species_name <- basename(species_path)
   
-  # Caminho do .tif
+  # path to .tif
   tif_file <- file.path(species_path, "present", "final_models", 
                         paste0(species_name, "_maxent_raw_mean.tif"))
   
   if (file.exists(tif_file)) {
-    cat("Processando:", species_name, "\n")
+    cat("Processing:", species_name, "\n")
     
-    # Carrega raster
+    # load raster
     model_rast <- rast(tif_file)
     
-    # Reprojetar os pontos para o CRS do raster
+    # Reproject points to raster CRS
     test_proj <- st_transform(test_sf, crs = crs(model_rast))
     test_vect <- terra::vect(test_proj)
     
-    # Extrair valores
+    # Extract values
     predicted_values <- terra::extract(model_rast, test_vect)
     predicted_values <- predicted_values[, -1, drop = FALSE]  # Remove ID
     
-    # Renomear coluna com nome da espécie
+    # Rename column with species name
     colnames(predicted_values) <- species_name
     
-    # Adicionar ao resultado geral
+    # Add to overall result
     result_all[[species_name]] <- predicted_values[[1]]
     
   } else {
-    cat("AVISO: Modelo não encontrado para:", species_name, "\n")
+    cat("WARNING: Model not found for:", species_name, "\n")
   }
 }
 
-# Salvar resultado final
-write.csv(result_all,  paste0(modelos_dir,'predicoes_todas_as_especies_val.csv'), row.names = FALSE)
+# Save final result
+write.csv(result_all,  paste0(models_dir,'predictions_all_species_val.csv'), row.names = FALSE)
 
-# Últimas 18 colunas: colunas de probabilidade por classe
+# Last 18 columns: probability columns per class
 prob_cols <- tail(colnames(result_all), 18)
-class_names <- prob_cols  # nomes das espécies
+class_names <- prob_cols  # species names
 
-# Função para calcular top-k
+# Function to compute top-k flag
 get_topk_flag <- function(probs_row, true_label, k) {
   probs_named <- setNames(as.numeric(probs_row), class_names)
   top_k <- names(sort(probs_named, decreasing = TRUE))[1:min(k, length(probs_named))]
   return(as.integer(true_label %in% top_k))
 }
 
-# Calcula top-1, 3, 5, 10
+# Compute top-1, 3, 5, 10
 for (k in c(1, 3, 5, 10)) {
   result_all[[paste0("top_", k, "_accuracy")]] <- mapply(
     FUN = function(true_label, probs_row) {
@@ -367,32 +366,32 @@ for (k in c(1, 3, 5, 10)) {
 }
 
 
-write.csv(result_all, paste0(modelos_dir,'predicoes_todas_as_especies_com_acuracia_val.csv'), row.names = FALSE)
+write.csv(result_all, paste0(models_dir,'predictions_all_species_with_accuracy_val.csv'), row.names = FALSE)
 
 
-# Vetor com os nomes das colunas de acurácia
+# Vector with accuracy column names
 accuracy_cols <- c("top_1_accuracy", "top_3_accuracy", "top_5_accuracy", "top_10_accuracy")
 
-cat("Acurácias gerais médias:\n")
+cat("Average overall accuracies:\n")
 
 for (col in accuracy_cols) {
   if (col %in% colnames(result_all)) {
     mean_acc <- mean(result_all[[col]], na.rm = TRUE)
     cat(sprintf("%s: %.2f%%\n", col, mean_acc * 100))
   } else {
-    cat(sprintf("Coluna %s não encontrada no data.frame.\n", col))
+    cat(sprintf("Column %s not found in the data.frame.\n", col))
   }
 }
 
 
 for (col in accuracy_cols) {
   if (col %in% colnames(result_all)) {
-    cat(sprintf("\n%s por classe:\n", col))
+    cat(sprintf("\n%s by class:\n", col))
     result_all %>%
       group_by(species) %>%
-      summarise(media = mean(.data[[col]], na.rm = TRUE)) %>%
-      arrange(desc(media)) %>%
-      mutate(media = sprintf("%.2f%%", media * 100)) %>%
+      summarise(mean_acc = mean(.data[[col]], na.rm = TRUE)) %>%
+      arrange(desc(mean_acc)) %>%
+      mutate(mean_acc = sprintf("%.2f%%", mean_acc * 100)) %>%
       print(n = Inf)
   }
 }

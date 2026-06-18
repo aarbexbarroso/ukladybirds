@@ -21,13 +21,13 @@ random.seed(SEED)
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 
-# Diretórios
+
 TRAIN_DIR = './Images/Batch_TVT'+str(RUN)+'/train'
 VAL_DIR   = './Images/Batch_TVT'+str(RUN)+'/validation'
 TEST_DIR   = './Images/Batch_TVT'+str(RUN)+'/test'
 CSV_OUTPUT_DIR = "./csv_10/Batch"+str(RUN)
 
-# Criar pasta de saída para CSVs
+
 os.makedirs(CSV_OUTPUT_DIR, exist_ok=True)
 
 IMAGE_SIZE = (299, 299)
@@ -35,11 +35,11 @@ BATCH_SIZE = 32
 NUM_EPOCHS = 500
 LEARNING_RATE = 0.0001
 
-# Função de pré-processamento (ResNet)
+
 def preprocess_resnet(img):
     return preprocess_input(img)
 
-# Geradores de imagem
+
 train_datagen = ImageDataGenerator(
     preprocessing_function=preprocess_resnet,
     rotation_range=45,
@@ -56,7 +56,7 @@ val_test_datagen = ImageDataGenerator(
     preprocessing_function=preprocess_resnet
 )
 
-# Geradores
+
 train_generator = train_datagen.flow_from_directory(
     TRAIN_DIR,
     target_size=IMAGE_SIZE,
@@ -83,14 +83,14 @@ test_generator = val_test_datagen.flow_from_directory(
 )
 
 
-# Número de classes
+
 num_classes = train_generator.num_classes
 
-# Base do modelo
-base_model = ResNet50(weights='imagenet', include_top=False, input_shape=IMAGE_SIZE + (3,))
-base_model.trainable = False  # Congela a base
 
-# Modelo final
+base_model = ResNet50(weights='imagenet', include_top=False, input_shape=IMAGE_SIZE + (3,))
+base_model.trainable = False  
+
+
 model = Sequential([
     base_model,
     GlobalAveragePooling2D(),
@@ -99,20 +99,20 @@ model = Sequential([
     Dense(num_classes, activation='softmax')
 ])
 
-# Compilação
+
 model.compile(
     optimizer=Adam(LEARNING_RATE),
     loss='categorical_crossentropy',
     metrics=['accuracy']
 )
 
-# Callbacks
+
 CALLBACKS = [
     EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True, verbose=1, min_delta=0.01),
     ReduceLROnPlateau(monitor='val_loss', patience=10, verbose=1)
 ]
 
-# Treinamento
+
 history = model.fit(
     train_generator,
     validation_data=val_generator,
@@ -120,9 +120,9 @@ history = model.fit(
     callbacks=CALLBACKS
 )
 
-# Salvar modelo
+
 model.save('resnet50_final_batch_'+str(RUN)+'.h5')
-print("\nModelo salvo como 'resnet50_final_batch_'+str(RUN)+'.h5'")
+print("\nModel saved as 'resnet50_final_batch_'+str(RUN)+'.h5'")
 
 
 def plot_training(history):
@@ -131,13 +131,11 @@ def plot_training(history):
     loss = history.history['loss']
     val_loss = history.history['val_loss']
     plt.figure(figsize=(12, 6))
-    # Gráfico de acurácia
     plt.subplot(1, 2, 1)
     plt.plot(acc, label='Training Accuracy')
     plt.plot(val_acc, label='Validation Accuracy')
     plt.title('Training and Validation Accuracy')
     plt.legend()
-    # Gráfico de perda
     plt.subplot(1, 2, 2)
     plt.plot(loss, label='Training Loss')
     plt.plot(val_loss, label='Validation Loss')
@@ -147,23 +145,20 @@ def plot_training(history):
 
 plot_training(history)
 
-# Função para gerar previsões e salvar CSV
+
 def generate_predictions_csv(generator, model, output_csv, dataset_name):
     predictions = model.predict(generator, verbose=1)
     y_true = generator.classes
     class_labels = list(generator.class_indices.keys())
-    # Identificadores das imagens
     image_ids = [os.path.basename(filepath) for filepath in generator.filepaths]
-    # DataFrame para armazenar os dados
     df = pd.DataFrame(predictions, columns=class_labels)
     df.insert(0, 'real_class', [class_labels[i] for i in y_true])
     df.insert(0, 'image_id', image_ids)
-    # Salvar o DataFrame no CSV
     csv_path = os.path.join(CSV_OUTPUT_DIR, output_csv)
     df.to_csv(csv_path, index=False)
-    print(f"{dataset_name} CSV salvo em {csv_path}")
+    print(f"{dataset_name} CSV saved at {csv_path}")
 
-# Gerar CSVs para os conjuntos de dados
+
 generate_predictions_csv(val_generator, model, "val_predictions_batch_"+str(RUN)+".csv", "Validation")
 generate_predictions_csv(test_generator, model, "test_predictions_batch_"+str(RUN)+".csv", "Test")
 
